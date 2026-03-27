@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+
+# Documentation (optional - remove if you want docs in container)
+*.md
+!README.md
+
+# Development files
+setup_windows.py
+verify_setup.py
+WINDOWS_FIX.md
+WINDOWS_SETUP.md
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp

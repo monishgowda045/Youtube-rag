@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: youtube-rag
+  labels:
+    app: youtube-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: youtube-rag
+  template:
+    metadata:
+      labels:
+        app: youtube-rag
+    spec:
+      containers:
+      - name: youtube-rag
+        image: ghcr.io/YOUR_USERNAME/YOUR_REPO:latest
+        ports:
+        - containerPort: 8501
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: youtube-rag-secrets
+              key: openai-api-key
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 5
+          periodSeconds: 5

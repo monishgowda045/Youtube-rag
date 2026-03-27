@@ -62,8 +62,7 @@ def get_channel_video_ids(channel_url: str, max_videos: int = 100) -> List[str]:
         'no_warnings': False,
         'playlistend': max_videos,
     }
-    
-    video_ids = []
+    video_ids = []{}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             print(f"   Extracting videos from: {channel_url}")

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: youtube-rag-service
+  labels:
+    app: youtube-rag
+spec:
+  selector:
+    app: youtube-rag
+  ports:
+  - port: 8501
+    targetPort: 8501
+    protocol: TCP
+  type: ClusterIP  # Use LoadBalancer or NodePort for external access

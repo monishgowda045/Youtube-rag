@@ -61,6 +61,99 @@ streamlit run app.py
 
 The app will open at `http://localhost:8501`
 
+## Docker Setup (Recommended)
+
+### Prerequisites
+- Docker and Docker Compose installed
+- OpenAI API key
+
+### Quick Start with Docker
+```bash
+# Clone the repository
+git clone <your-github-repo-url>
+cd youtube-rag
+
+# Copy environment template
+cp .env.template .env
+
+# Edit .env and add your OpenAI API key
+# OPENAI_API_KEY=sk-...
+
+# Build and run with Docker Compose
+docker-compose up --build
+```
+
+The app will be available at `http://localhost:8501`
+
+### Manual Docker Commands
+```bash
+# Build the image
+docker build -t youtube-rag .
+
+# Run the container
+docker run -p 8501:8501 --env-file .env youtube-rag
+```
+
+### Docker Image on GitHub Container Registry
+After pushing to GitHub, the image will be available at:
+```
+ghcr.io/<your-username>/<repo-name>:latest
+```
+
+## Kubernetes Deployment
+
+### Prerequisites
+- Kubernetes cluster (local with minikube/kind, or cloud)
+- `kubectl` configured to access your cluster
+- Docker image built and pushed to registry
+
+### Quick Kubernetes Deploy
+```bash
+# 1. Create secret with your OpenAI API key
+kubectl create secret generic youtube-rag-secrets \
+  --from-literal=openai-api-key=YOUR_OPENAI_API_KEY
+
+# 2. Update image path in k8s-all.yml
+# Change: ghcr.io/YOUR_USERNAME/YOUR_REPO:latest
+# To: ghcr.io/youractualusername/youractualrepo:latest
+
+# 3. Deploy
+kubectl apply -f k8s-all.yml
+
+# 4. Check status
+kubectl get pods
+kubectl get svc
+
+# 5. Access the app
+kubectl port-forward svc/youtube-rag-service 8501:8501
+# Visit: http://localhost:8501
+```
+
+### Using the Deploy Script
+```bash
+# Set your namespace (optional)
+export K8S_NAMESPACE=default
+
+# Deploy
+./k8s-deploy.sh deploy
+
+# Check status
+./k8s-deploy.sh status
+
+# Update deployment
+./k8s-deploy.sh update
+
+# Delete
+./k8s-deploy.sh delete
+```
+
+### Kubernetes Files
+- `k8s-all.yml` - Complete deployment manifest (Secret + Deployment + Service)
+- `k8s-deployment.yml` - Just the deployment
+- `k8s-service.yml` - Just the service
+- `k8s-secret.yml` - Just the secret template
+- `k8s-deploy.sh` - Convenience script for deployment operations
+
 ## Windows Users
 
 If you encounter GCC compiler errors or pip installation issues on Windows:
