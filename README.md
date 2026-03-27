@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # YouTube Channel RAG
 
 Transform any YouTube channel into a searchable knowledge base. Ask questions across hundreds of videos without watching a single one.
@@ -172,3 +173,6 @@ YOUTUBE-RAG/
 ## License
 
 MIT
+=======
+# Youtube-rag
+>>>>>>> e625abc81d7e2a89ee36cf0061fbb93f320ab5aa
