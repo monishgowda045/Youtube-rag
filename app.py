@@ -28,7 +28,7 @@ with st.sidebar:
         "Max videos to index",
         min_value=5,
         max_value=500,
-        value=100,
+        value=10,
         step=5
     )
 

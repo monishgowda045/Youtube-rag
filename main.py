@@ -4,7 +4,10 @@ Fetches, processes, embeds, and queries YouTube channel transcripts
 """
 
 import os
+import sys
 import json
+import signal
+import traceback
 from typing import List, Dict
 from dotenv import load_dotenv
 import yt_dlp
@@ -24,6 +27,11 @@ _vector_store = {
     "ids": [],
     "metadatas": []
 }
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for timeout"""
+    raise TimeoutError("Operation timed out")
 
 
 def get_channel_video_ids(channel_url: str, max_videos: int = 100) -> List[str]:
@@ -64,58 +72,95 @@ def get_channel_video_ids(channel_url: str, max_videos: int = 100) -> List[str]:
     }
     video_ids = []
     try:
+        print(f"   Creating YoutubeDL instance with options: extract_flat={ydl_opts.get('extract_flat')}, playlistend={ydl_opts.get('playlistend')}")
+        sys.stdout.flush()
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             print(f"   Extracting videos from: {channel_url}")
-            info = ydl.extract_info(channel_url, download=False)
+            sys.stdout.flush()
+            
+            # Try to extract info
+            try:
+                print(f"   Calling extract_info...")
+                sys.stdout.flush()
+                info = ydl.extract_info(channel_url, download=False)
+                print(f"   extract_info completed, got response type: {type(info)}")
+                sys.stdout.flush()
+            except Exception as e:
+                print(f"   ❌ extract_info failed: {str(e)}")
+                traceback.print_exc()
+                sys.stdout.flush()
+                raise
+            
+            print(f"   Got info, processing entries...")
+            sys.stdout.flush()
+            
             if info and 'entries' in info:
-                video_ids = [entry['id'] for entry in info.get('entries', []) if entry and 'id' in entry]
+                print(f"   Found entries dict, entries count: {len(info.get('entries', []))}")
+                sys.stdout.flush()
+                print(f"   Extracting video IDs...")
+                sys.stdout.flush()
+                entries = info.get('entries', [])
+                for idx, entry in enumerate(entries):
+                    if entry and 'id' in entry:
+                        video_ids.append(entry['id'])
+                        if (idx + 1) % 10 == 0:
+                            print(f"   ... extracted {idx + 1}/{len(entries)} IDs")
+                            sys.stdout.flush()
+                print(f"   Got {len(video_ids)} entries before filtering")
+                sys.stdout.flush()
                 # Filter out channel IDs (those starting with UC and are 24 chars)
                 video_ids = [vid for vid in video_ids if not (vid.startswith('UC') and len(vid) == 24)]
+                print(f"   After filtering: {len(video_ids)} video IDs")
+                sys.stdout.flush()
             else:
                 print(f"   No entries found in response")
+                sys.stdout.flush()
         print(f"   ✅ Found {len(video_ids)} videos")
+        sys.stdout.flush()
     except Exception as e:
         print(f"   ❌ Error fetching videos: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
         print(f"   Possible solutions:")
         print(f"   1. Use format: https://www.youtube.com/@channelname/videos")
         print(f"   2. Or use: https://www.youtube.com/c/channelname/videos")
         print(f"   3. Check internet connection and YouTube URL validity")
+        sys.stdout.flush()
         return []
     
     if not video_ids:
         print(f"   ❌ No actual video IDs found. Try a different URL format.")
     
+    print(f"🎬 get_channel_video_ids returning {len(video_ids)} video IDs")
+    sys.stdout.flush()
     return video_ids
 
 
 def get_transcript(video_id: str) -> str:
     """
     Fetch transcript for a single YouTube video.
-    
-    Args:
-        video_id: YouTube video ID
-    
-    Returns:
-        Transcript text, or None if unavailable
     """
     try:
-        # Create API instance and fetch transcript
         api = YouTubeTranscriptApi()
         transcript_list = api.fetch(video_id)
+        
         if transcript_list:
-            # Concatenate all transcript items - handle both dict and object formats
-            transcript_text = []
-            for item in transcript_list:
-                if isinstance(item, dict):
-                    transcript_text.append(item.get("text", ""))
-                else:
-                    # Handle FetchedTranscriptSnippet objects
-                    transcript_text.append(str(getattr(item, "text", "")))
-            transcript = " ".join(transcript_text)
-            return transcript if transcript else None
+            transcript_text = " ".join([item.get("text", "") if isinstance(item, dict) else str(getattr(item, "text", "")) for item in transcript_list])
+            return transcript_text if transcript_text.strip() else None
         return None
     except Exception as e:
-        # Video may not have captions - skip silently
+        # Try auto-generated captions as fallback
+        try:
+            api = YouTubeTranscriptApi()
+            transcript_list = api.fetch(video_id, languages=['en', 'en-US'])
+            if transcript_list:
+                transcript_text = " ".join([item.get("text", "") if isinstance(item, dict) else str(getattr(item, "text", "")) for item in transcript_list])
+                return transcript_text if transcript_text.strip() else None
+        except Exception as e2:
+            pass
+        
         return None
 
 
@@ -158,7 +203,7 @@ def get_embedding(text: str) -> List[float]:
     return response.data[0].embedding
 
 
-def index_channel(channel_url: str, max_videos: int = 100) -> bool:
+def index_channel(channel_url: str, max_videos: int = 10) -> bool:
     """
     Main workflow: fetch, transcode, embed, and store all channel videos.
     
@@ -180,66 +225,93 @@ def index_channel(channel_url: str, max_videos: int = 100) -> bool:
     print(f"\n🔄 Starting channel indexing...")
     
     # Get video IDs
+    print(f"🎬 Calling get_channel_video_ids...")
+    sys.stdout.flush()
     video_ids = get_channel_video_ids(channel_url, max_videos)
+    print(f"✅ get_channel_video_ids returned, got {len(video_ids)} videos")
+    sys.stdout.flush()
     if not video_ids:
         print("❌ No videos found")
+        sys.stdout.flush()
         return False
     
     print(f"📺 Found {len(video_ids)} total videos, fetching transcripts...")
+    sys.stdout.flush()
     
     indexed_count = 0
     no_transcript_count = 0
     
-    for idx, video_id in enumerate(video_ids, 1):
-        # Get transcript
-        transcript = get_transcript(video_id)
-        if not transcript:
-            no_transcript_count += 1
-            print(f"   ⏭️  Video {idx}/{len(video_ids)}: No transcript available (skipping)")
-            continue
-        
-        print(f"   ✅ Video {idx}/{len(video_ids)}: Got transcript ({len(transcript)} chars)")
-        
-        # Chunk text
-        chunks = chunk_text(transcript)
-        
-        # Process each chunk
-        for chunk_idx, chunk in enumerate(chunks):
+    try:
+        for idx, video_id in enumerate(video_ids, 1):
             try:
-                # Get embedding
-                embedding = get_embedding(chunk)
+                print(f"   ▶️ Video {idx}/{len(video_ids)}: {video_id}")
+                sys.stdout.flush()
                 
-                # Prepare metadata
-                video_url = f"https://www.youtube.com/watch?v={video_id}"
-                doc_id = f"{video_id}_chunk_{chunk_idx}"
+                # Get transcript
+                transcript = get_transcript(video_id)
+                if not transcript:
+                    print(f"   ⏭️  Skipped")
+                    sys.stdout.flush()
+                    no_transcript_count += 1
+                    continue
                 
-                # Store in memory
-                _vector_store["documents"].append(chunk)
-                _vector_store["embeddings"].append(embedding)
-                _vector_store["ids"].append(doc_id)
-                _vector_store["metadatas"].append({
-                    "video_id": video_id,
-                    "url": video_url,
-                    "chunk_index": chunk_idx
-                })
+                print(f"   ✅ Got transcript ({len(transcript)} chars)")
+                sys.stdout.flush()
+                
+                # Chunk text
+                chunks = chunk_text(transcript)
+                
+                # Process each chunk
+                for chunk_idx, chunk in enumerate(chunks):
+                    try:
+                        # Get embedding
+                        embedding = get_embedding(chunk)
+                        
+                        # Store in memory
+                        video_url = f"https://www.youtube.com/watch?v={video_id}"
+                        doc_id = f"{video_id}_chunk_{chunk_idx}"
+                        _vector_store["documents"].append(chunk)
+                        _vector_store["embeddings"].append(embedding)
+                        _vector_store["ids"].append(doc_id)
+                        _vector_store["metadatas"].append({
+                            "video_id": video_id,
+                            "url": video_url,
+                            "chunk_index": chunk_idx
+                        })
+                    except Exception as e:
+                        print(f"   ❌ Chunk error: {str(e)}")
+                        sys.stdout.flush()
+                        continue
+                
+                indexed_count += 1
             except Exception as e:
-                print(f"   Error processing chunk: {str(e)}")
+                print(f"   ❌ Video error: {str(e)}")
+                sys.stdout.flush()
                 continue
-        
-        indexed_count += 1
+    except Exception as e:
+        print(f"   ❌ CRITICAL: {str(e)}")
+        sys.stdout.flush()
     
     print(f"\n📊 Indexing Summary:")
+    sys.stdout.flush()
     print(f"   ✅ Videos with transcripts indexed: {indexed_count}")
+    sys.stdout.flush()
     print(f"   ⏭️  Videos without transcripts: {no_transcript_count}")
+    sys.stdout.flush()
     print(f"   📝 Total chunks created: {len(_vector_store['documents'])}")
+    sys.stdout.flush()
     
     if indexed_count == 0:
         print(f"\n❌ ERROR: No videos with transcripts found!")
+        sys.stdout.flush()
         print(f"   YouTube videos need auto-generated or manual captions to work with this app.")
+        sys.stdout.flush()
         print(f"   Try a different channel or enable captions for videos.")
+        sys.stdout.flush()
         return False
     
     print(f"\n✅ Successfully indexed {indexed_count} videos!\n")
+    sys.stdout.flush()
     return True
 
 
